@@ -26,7 +26,8 @@ import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Main as E
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
-
+import qualified Type.Constrain.Module as Type
+import qualified Type.Constrain.Expression as Type
 
 
 -- OPTIMIZE
@@ -40,7 +41,7 @@ type Annotations =
   Map.Map Name.Name Can.Annotation
 
 
-optimize :: Annotations -> Can.Module -> Result i [W.Warning] Opt.LocalGraph
+optimize :: Annotations -> Type.TypedModule -> Result i [W.Warning] Opt.LocalGraph
 optimize annotations (Can.Module home _ _ decls unions aliases _ effects) =
   addDecls home annotations decls $
     addEffects home effects $
@@ -185,7 +186,7 @@ addToGraph name node fields (Opt.LocalGraph main nodes fieldCounts) =
 -- ADD DECLS
 
 
-addDecls :: ModuleName.Canonical -> Annotations -> Can.Decls -> Opt.LocalGraph -> Result i [W.Warning] Opt.LocalGraph
+addDecls :: ModuleName.Canonical -> Annotations -> Type.TypedDecls -> Opt.LocalGraph -> Result i [W.Warning] Opt.LocalGraph
 addDecls home annotations decls graph =
   case decls of
     Can.Declare def subDecls ->
@@ -204,7 +205,7 @@ addDecls home annotations decls graph =
       Result.ok graph
 
 
-findMain :: [Can.Def] -> Maybe A.Region
+findMain :: [Type.TypedDef] -> Maybe A.Region
 findMain defs =
   case defs of
     [] ->
@@ -219,7 +220,7 @@ findMain defs =
           if name == Name._main then Just region else findMain rest
 
 
-defToName :: Can.Def -> Name.Name
+defToName :: Type.TypedDef -> Name.Name
 defToName def =
   case def of
     Can.Def (A.At _ name) _ _          -> name
@@ -230,7 +231,7 @@ defToName def =
 -- ADD DEFS
 
 
-addDef :: ModuleName.Canonical -> Annotations -> Can.Def -> Opt.LocalGraph -> Result i [W.Warning] Opt.LocalGraph
+addDef :: ModuleName.Canonical -> Annotations -> Type.TypedDef -> Opt.LocalGraph -> Result i [W.Warning] Opt.LocalGraph
 addDef home annotations def graph =
   case def of
     Can.Def (A.At region name) args body ->
@@ -242,7 +243,7 @@ addDef home annotations def graph =
       addDefHelp region annotations home name (map fst typedArgs) body graph
 
 
-addDefHelp :: A.Region -> Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.LocalGraph -> Result i w Opt.LocalGraph
+addDefHelp :: A.Region -> Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Type.TypedExpr -> Opt.LocalGraph -> Result i w Opt.LocalGraph
 addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes fieldCounts) =
   if name /= Name._main then
     Result.ok (addDefNode home name args body Set.empty graph)
@@ -272,7 +273,7 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
           Result.throw (E.BadType region tipe)
 
 
-addDefNode :: ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
+addDefNode :: ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Type.TypedExpr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
 addDefNode home name args body mainDeps graph =
   let
     (deps, fields, def) =
@@ -301,7 +302,7 @@ data State =
     }
 
 
-addRecDefs :: ModuleName.Canonical -> [Can.Def] -> Opt.LocalGraph -> Opt.LocalGraph
+addRecDefs :: ModuleName.Canonical -> [Type.TypedDef] -> Opt.LocalGraph -> Opt.LocalGraph
 addRecDefs home defs (Opt.LocalGraph main nodes fieldCounts) =
   let
     names = reverse (map toName defs)
@@ -319,21 +320,21 @@ addRecDefs home defs (Opt.LocalGraph main nodes fieldCounts) =
     (Map.unionWith (+) fields fieldCounts)
 
 
-toName :: Can.Def -> Name.Name
+toName :: Type.TypedDef -> Name.Name
 toName def =
   case def of
     Can.Def      (A.At _ name) _ _     -> name
     Can.TypedDef (A.At _ name) _ _ _ _ -> name
 
 
-addValueName :: Can.Def -> Set.Set Name.Name -> Set.Set Name.Name
+addValueName :: Type.TypedDef -> Set.Set Name.Name -> Set.Set Name.Name
 addValueName def names =
   case def of
     Can.Def      (A.At _ name)   args _   -> if null args then Set.insert name names else names
     Can.TypedDef (A.At _ name) _ args _ _ -> if null args then Set.insert name names else names
 
 
-addLink :: ModuleName.Canonical -> Opt.Node -> Can.Def -> Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global Opt.Node
+addLink :: ModuleName.Canonical -> Opt.Node -> Type.TypedDef -> Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global Opt.Node
 addLink home link def links =
   case def of
     Can.Def (A.At _ name) _ _ ->
@@ -347,7 +348,7 @@ addLink home link def links =
 -- ADD RECURSIVE DEFS
 
 
-addRecDef :: Set.Set Name.Name -> State -> Can.Def -> Names.Tracker State
+addRecDef :: Set.Set Name.Name -> State -> Type.TypedDef -> Names.Tracker State
 addRecDef cycle state def =
   case def of
     Can.Def (A.At _ name) args body ->
@@ -357,7 +358,7 @@ addRecDef cycle state def =
       addRecDefHelp cycle state name (map fst args) body
 
 
-addRecDefHelp :: Set.Set Name.Name -> State -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker State
+addRecDefHelp :: Set.Set Name.Name -> State -> Name.Name -> [Can.Pattern] -> Type.TypedExpr -> Names.Tracker State
 addRecDefHelp cycle (State values funcs) name args body =
   case args of
     [] ->

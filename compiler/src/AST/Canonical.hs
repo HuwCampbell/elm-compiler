@@ -1,13 +1,13 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 module AST.Canonical
-  ( Expr, Expr_(..)
-  , CaseBranch(..)
-  , FieldUpdate(..)
+  ( Expr, AExpr, Expr_(..)
+  , CaseBranch, ACaseBranch(..)
+  , FieldUpdate, AFieldUpdate(..)
   , CtorOpts(..)
   -- definitions
-  , Def(..)
-  , Decls(..)
+  , Def, ADef(..)
+  , Decls, ADecls(..)
   -- patterns
   , Pattern, Pattern_(..)
   , PatternCtorArg(..)
@@ -18,7 +18,7 @@ module AST.Canonical
   , FieldType(..)
   , fieldsToList
   -- modules
-  , Module(..)
+  , Module, AModule(..)
   , Alias(..)
   , Binop(..)
   , Union(..)
@@ -71,12 +71,13 @@ import qualified Reporting.Annotation as A
 -- EXPRESSIONS
 
 
-type Expr =
-  A.Located Expr_
+type Expr = AExpr A.Region
+type AExpr a =
+  A.Annotated a (Expr_ a)
 
 
 -- CACHE Annotations for type inference
-data Expr_
+data Expr_ a
   = VarLocal Name
   | VarTopLevel ModuleName.Canonical Name
   | VarKernel Name Name
@@ -88,49 +89,51 @@ data Expr_
   | Str ES.String
   | Int Int
   | Float EF.Float
-  | List [Expr]
-  | Negate Expr
-  | Binop Name ModuleName.Canonical Name Annotation Expr Expr -- CACHE real name for optimization
-  | Lambda [Pattern] Expr
-  | Call Expr [Expr]
-  | If [(Expr, Expr)] Expr
-  | Let Def Expr
-  | LetRec [Def] Expr
-  | LetDestruct Pattern Expr Expr
-  | Case Expr [CaseBranch]
+  | List [AExpr a]
+  | Negate (AExpr a)
+  | Binop Name ModuleName.Canonical Name Annotation (AExpr a) (AExpr a) -- CACHE real name for optimization
+  | Lambda [Pattern] (AExpr a)
+  | Call (AExpr a) [AExpr a]
+  | If [(AExpr a, AExpr a)] (AExpr a)
+  | Let (ADef a) (AExpr a)
+  | LetRec [ADef a] (AExpr a)
+  | LetDestruct Pattern (AExpr a) (AExpr a)
+  | Case (AExpr a) [ACaseBranch a]
   | Accessor Name
-  | Access Expr (A.Located Name)
-  | Update Name Expr (Map.Map Name FieldUpdate)
-  | Record (Map.Map Name Expr)
+  | Access (AExpr a) (A.Located Name)
+  | Update Name (AExpr a) (Map.Map Name (AFieldUpdate a))
+  | Record (Map.Map Name (AExpr a))
   | Unit
-  | Tuple Expr Expr (Maybe Expr)
+  | Tuple (AExpr a) (AExpr a) (Maybe (AExpr a))
   | Shader Shader.Source Shader.Types
 
 
-data CaseBranch =
-  CaseBranch Pattern Expr
+type CaseBranch = ACaseBranch A.Region
+data ACaseBranch a =
+  CaseBranch Pattern (AExpr a)
 
 
-data FieldUpdate =
-  FieldUpdate A.Region Expr
+type FieldUpdate = AFieldUpdate A.Region
+data AFieldUpdate a =
+  FieldUpdate A.Region (AExpr a)
 
 
 
 -- DEFS
 
-
-data Def
-  = Def (A.Located Name) [Pattern] Expr
-  | TypedDef (A.Located Name) FreeVars [(Pattern, Type)] Expr Type
+type Def = ADef A.Region
+data ADef a
+  = Def (A.Located Name) [Pattern] (AExpr a)
+  | TypedDef (A.Located Name) FreeVars [(Pattern, Type)] (AExpr a) Type
 
 
 
 -- DECLARATIONS
 
-
-data Decls
-  = Declare Def Decls
-  | DeclareRec Def [Def] Decls
+type Decls = ADecls A.Region
+data ADecls a
+  = Declare (ADef a) (ADecls a)
+  | DeclareRec (ADef a) [ADef a] (ADecls a)
   | SaveTheEnvironment
 
 
@@ -229,12 +232,13 @@ fieldsToList fields =
 -- MODULES
 
 
-data Module =
+type Module = AModule A.Region
+data AModule a =
   Module
     { _name    :: ModuleName.Canonical
     , _exports :: Exports
     , _docs    :: Src.Docs
-    , _decls   :: Decls
+    , _decls   :: ADecls a
     , _unions  :: Map.Map Name Union
     , _aliases :: Map.Map Name Alias
     , _binops  :: Map.Map Name Binop

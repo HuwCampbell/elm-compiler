@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Type.Constrain.Module
   ( constrain
+
+  , TypedModule
   )
   where
 
@@ -21,47 +23,58 @@ import Type.Type (Type(..), Constraint(..), (==>), mkFlexVar, nameToRigid, never
 
 -- CONSTRAIN
 
+type TypedModule = Can.AModule (E.Expected Type)
 
-constrain :: Can.Module -> IO Constraint
-constrain (Can.Module home _ _ decls _ _ _ effects) =
-  case effects of
-    Can.NoEffects ->
-      constrainDecls decls CSaveTheEnvironment
+constrain :: Can.Module -> IO (TypedModule, Constraint)
+constrain (Can.Module home _exports _docs decls _unions _aliases _binops effects) = do
+  (decls', cons) <-
+    case effects of
+      Can.NoEffects ->
+        constrainDecls decls CSaveTheEnvironment
 
-    Can.Ports ports ->
-      Map.foldrWithKey letPort (constrainDecls decls CSaveTheEnvironment) ports
+      Can.Ports ports -> do
+        (decls', cons) <- constrainDecls decls CSaveTheEnvironment
+        cons' <- Map.foldrWithKey letPort (pure cons) ports
+        return (decls', cons')
 
-    Can.Manager r0 r1 r2 manager ->
-      case manager of
-        Can.Cmd cmdName ->
-          letCmd home cmdName =<<
-            constrainDecls decls =<< constrainEffects home r0 r1 r2 manager
+      Can.Manager r0 r1 r2 manager ->
+        case manager of
+          Can.Cmd cmdName ->
+            letCmd home cmdName =<<
+              constrainDecls decls =<< constrainEffects home r0 r1 r2 manager
 
-        Can.Sub subName ->
-          letSub home subName =<<
-            constrainDecls decls =<< constrainEffects home r0 r1 r2 manager
+          Can.Sub subName ->
+            letSub home subName =<<
+              constrainDecls decls =<< constrainEffects home r0 r1 r2 manager
 
-        Can.Fx cmdName subName ->
-          letCmd home cmdName =<<
-          letSub home subName =<<
-            constrainDecls decls =<< constrainEffects home r0 r1 r2 manager
+          Can.Fx cmdName subName ->
+            letCmd home cmdName =<<
+            letSub home subName =<<
+              constrainDecls decls =<< constrainEffects home r0 r1 r2 manager
 
+  return (Can.Module home _exports _docs decls' _unions _aliases _binops effects, cons)
 
 
 -- CONSTRAIN DECLARATIONS
 
+type TypedDecls = Can.ADecls (E.Expected Type)
 
-constrainDecls :: Can.Decls -> Constraint -> IO Constraint
+constrainDecls :: Can.Decls -> Constraint -> IO (TypedDecls, Constraint)
 constrainDecls decls finalConstraint =
   case decls of
-    Can.Declare def otherDecls ->
-      Expr.constrainDef Map.empty def =<< constrainDecls otherDecls finalConstraint
+    Can.Declare def otherDecls -> do
+      (others, cons)  <- constrainDecls otherDecls finalConstraint
+      (single, cons') <- Expr.constrainDef Map.empty def cons
+      return (Can.Declare single others, cons')
 
-    Can.DeclareRec def defs otherDecls ->
-      Expr.constrainRecursiveDefs Map.empty (def:defs) =<< constrainDecls otherDecls finalConstraint
+    Can.DeclareRec def defs otherDecls ->do
+      (others, cons)  <- constrainDecls otherDecls finalConstraint
+      (single, cons') <- Expr.constrainRecursiveDefs Map.empty (def:defs) cons
+      return (Can.DeclareRec (head single) (tail single) others, cons')
+
 
     Can.SaveTheEnvironment ->
-      return finalConstraint
+      return (Can.SaveTheEnvironment, finalConstraint)
 
 
 
@@ -88,22 +101,22 @@ letPort name port_ makeConstraint =
 -- EFFECT MANAGER HELPERS
 
 
-letCmd :: ModuleName.Canonical -> Name.Name -> Constraint -> IO Constraint
-letCmd home tipe constraint =
+letCmd :: ModuleName.Canonical -> Name.Name -> (a, Constraint) -> IO (a, Constraint)
+letCmd home tipe (a, constraint) =
   do  msgVar <- mkFlexVar
       let msg = VarN msgVar
       let cmdType = FunN (AppN home tipe [msg]) (AppN ModuleName.cmd Name.cmd [msg])
       let header = Map.singleton "command" (A.At A.zero cmdType)
-      return $ CLet [msgVar] [] header CTrue constraint
+      return (a, CLet [msgVar] [] header CTrue constraint)
 
 
-letSub :: ModuleName.Canonical -> Name.Name -> Constraint -> IO Constraint
-letSub home tipe constraint =
+letSub :: ModuleName.Canonical -> Name.Name -> (a, Constraint) -> IO (a, Constraint)
+letSub home tipe (a, constraint) =
   do  msgVar <- mkFlexVar
       let msg = VarN msgVar
       let subType = FunN (AppN home tipe [msg]) (AppN ModuleName.sub Name.sub [msg])
       let header = Map.singleton "subscription" (A.At A.zero subType)
-      return $ CLet [msgVar] [] header CTrue constraint
+      return (a, CLet [msgVar] [] header CTrue constraint)
 
 
 constrainEffects :: ModuleName.Canonical -> A.Region -> A.Region -> A.Region -> Can.Manager -> IO Constraint

@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 module Optimize.Expression
   ( optimize
   , destructArgs
@@ -22,7 +23,10 @@ import qualified Elm.ModuleName as ModuleName
 import qualified Optimize.Case as Case
 import qualified Optimize.Names as Names
 import qualified Reporting.Annotation as A
+import qualified Reporting.Error.Type as E
 
+import qualified Type.Type as Type
+import           Type.Constrain.Expression (TypedExpr, TypedDef)
 
 
 -- OPTIMIZE
@@ -32,8 +36,9 @@ type Cycle =
   Set.Set Name.Name
 
 
-optimize :: Cycle -> Can.Expr -> Names.Tracker Opt.Expr
-optimize cycle (A.At region expression) =
+
+optimize :: Cycle -> TypedExpr -> Names.Tracker Opt.Expr
+optimize cycle (A.At _ expression) =
   case expression of
     Can.VarLocal name ->
       pure (Opt.VarLocal name)
@@ -54,7 +59,7 @@ optimize cycle (A.At region expression) =
       Names.registerCtor home name index opts
 
     Can.VarDebug home name _ ->
-      Names.registerDebug name home region
+      Names.registerDebug name home A.zero
 
     Can.VarOperator _ home name _ ->
       Names.registerGlobal home name
@@ -178,7 +183,7 @@ optimize cycle (A.At region expression) =
 -- UPDATE
 
 
-optimizeUpdate :: Cycle -> Can.FieldUpdate -> Names.Tracker Opt.Expr
+optimizeUpdate :: Cycle -> Can.AFieldUpdate (E.Expected Type.Type) -> Names.Tracker Opt.Expr
 optimizeUpdate cycle (Can.FieldUpdate _ expr) =
   optimize cycle expr
 
@@ -187,7 +192,7 @@ optimizeUpdate cycle (Can.FieldUpdate _ expr) =
 -- DEFINITION
 
 
-optimizeDef :: Cycle -> Can.Def -> Opt.Expr -> Names.Tracker Opt.Expr
+optimizeDef :: Cycle -> TypedDef -> Opt.Expr -> Names.Tracker Opt.Expr
 optimizeDef cycle def body =
   case def of
     Can.Def (A.At _ name) args expr ->
@@ -197,7 +202,7 @@ optimizeDef cycle def body =
       optimizeDefHelp cycle name (map fst typedArgs) expr body
 
 
-optimizeDefHelp :: Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.Expr -> Names.Tracker Opt.Expr
+optimizeDefHelp :: Cycle -> Name.Name -> [Can.Pattern] -> TypedExpr -> Opt.Expr -> Names.Tracker Opt.Expr
 optimizeDefHelp cycle name args expr body =
   do  oexpr <- optimize cycle expr
       case args of
@@ -343,7 +348,7 @@ destructCtorArg path revDs (Can.PatternCtorArg index _ arg) =
 -- TAIL CALL
 
 
-optimizePotentialTailCallDef :: Cycle -> Can.Def -> Names.Tracker Opt.Def
+optimizePotentialTailCallDef :: Cycle -> TypedDef -> Names.Tracker Opt.Def
 optimizePotentialTailCallDef cycle def =
   case def of
     Can.Def (A.At _ name) args expr ->
@@ -353,14 +358,14 @@ optimizePotentialTailCallDef cycle def =
       optimizePotentialTailCall cycle name (map fst typedArgs) expr
 
 
-optimizePotentialTailCall :: Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker Opt.Def
+optimizePotentialTailCall :: Cycle -> Name.Name -> [Can.Pattern] -> TypedExpr -> Names.Tracker Opt.Def
 optimizePotentialTailCall cycle name args expr =
   do  (argNames, destructors) <- destructArgs args
       toTailDef name argNames destructors <$>
         optimizeTail cycle name argNames expr
 
 
-optimizeTail :: Cycle -> Name.Name -> [Name.Name] -> Can.Expr -> Names.Tracker Opt.Expr
+optimizeTail :: Cycle -> Name.Name -> [Name.Name] -> TypedExpr -> Names.Tracker Opt.Expr
 optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
   case expression of
     Can.Call func args ->

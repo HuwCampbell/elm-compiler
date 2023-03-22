@@ -70,6 +70,11 @@ exists :: [Variable] -> Constraint -> Constraint
 exists flexVars constraint =
   CLet [] flexVars Map.empty constraint CTrue
 
+instance Semigroup Constraint where
+  a <> b = CAnd [a, b]
+
+instance Monoid Constraint where
+  mempty = CTrue
 
 
 -- TYPE PRIMITIVES

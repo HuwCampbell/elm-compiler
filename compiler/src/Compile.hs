@@ -34,6 +34,7 @@ import System.IO.Unsafe (unsafePerformIO)
 data Artifacts =
   Artifacts
     { _modul :: Can.Module
+    , _typed :: Type.TypedModule
     , _types :: Map.Map Name.Name Can.Annotation
     , _graph :: Opt.LocalGraph
     }
@@ -41,11 +42,11 @@ data Artifacts =
 
 compile :: Pkg.Name -> Map.Map ModuleName.Raw I.Interface -> Src.Module -> Either E.Error Artifacts
 compile pkg ifaces modul =
-  do  canonical   <- canonicalize pkg ifaces modul
-      annotations <- typeCheck modul canonical
-      ()          <- nitpick canonical
-      objects     <- optimize modul annotations canonical
-      return (Artifacts canonical annotations objects)
+  do  canonical            <- canonicalize pkg ifaces modul
+      (typed, annotations) <- typeCheck modul canonical
+      ()                   <- nitpick canonical
+      objects              <- optimize modul annotations typed
+      return (Artifacts canonical typed annotations objects)
 
 
 
@@ -62,13 +63,13 @@ canonicalize pkg ifaces modul =
       Left $ E.BadNames errors
 
 
-typeCheck :: Src.Module -> Can.Module -> Either E.Error (Map.Map Name.Name Can.Annotation)
+typeCheck :: Src.Module -> Can.Module -> Either E.Error (Type.TypedModule, Map.Map Name.Name Can.Annotation)
 typeCheck modul canonical =
-  case unsafePerformIO (Type.run =<< Type.constrain canonical) of
-    Right annotations ->
-      Right annotations
+  case unsafePerformIO (traverse Type.run =<< Type.constrain canonical) of
+    (typedModule, Right annotations) ->
+      Right (typedModule, annotations)
 
-    Left errors ->
+    (_, Left errors) ->
       Left (E.BadTypes (Localizer.fromModule modul) errors)
 
 
@@ -82,7 +83,7 @@ nitpick canonical =
       Left (E.BadPatterns errors)
 
 
-optimize :: Src.Module -> Map.Map Name.Name Can.Annotation -> Can.Module -> Either E.Error Opt.LocalGraph
+optimize :: Src.Module -> Map.Map Name.Name Can.Annotation -> Type.TypedModule -> Either E.Error Opt.LocalGraph
 optimize modul annotations canonical =
   case snd $ R.run $ Optimize.optimize annotations canonical of
     Right localGraph ->

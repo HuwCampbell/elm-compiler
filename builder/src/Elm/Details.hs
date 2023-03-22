@@ -666,7 +666,7 @@ compile pkg mvar status =
                 Left _ ->
                   return Nothing
 
-                Right (Compile.Artifacts canonical annotations objects) ->
+                Right (Compile.Artifacts canonical _ annotations objects) ->
                   let
                     ifaces = I.fromModule pkg canonical annotations
                     docs = makeDocs docsStatus canonical

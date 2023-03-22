@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -Wall #-}
 module Reporting.Annotation
-  ( Located(..)
+  ( Annotated (..)
+  , Located
   , Position(..)
   , Region(..)
   , traverse
@@ -24,22 +25,23 @@ import Data.Word (Word16)
 
 -- LOCATED
 
+type Located a =
+  Annotated Region a
 
-data Located a =
-  At Region a  -- PERF see if unpacking region is helpful
+data Annotated r a =
+  At r a
+
+instance Functor (Annotated r) where
+  fmap f (At annotation a) =
+    At annotation (f a)
 
 
-instance Functor Located where
-  fmap f (At region a) =
-    At region (f a)
-
-
-traverse :: (Functor f) => (a -> f b) -> Located a -> f (Located b)
+traverse :: (Functor f) => (a -> f b) -> Annotated r a -> f (Annotated r b)
 traverse func (At region value) =
   At region <$> func value
 
 
-toValue :: Located a -> a
+toValue :: Annotated r a -> a
 toValue (At _ value) =
   value
 

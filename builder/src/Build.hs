@@ -706,7 +706,7 @@ compile (Env key root projectType _ buildID _ _) docsNeed (Details.Local path ti
     pkg = projectTypeToPkg projectType
   in
   case Compile.compile pkg ifaces modul of
-    Right (Compile.Artifacts canonical annotations objects) ->
+    Right (Compile.Artifacts canonical _ annotations objects) ->
       case makeDocs docsNeed canonical of
         Left err ->
           return $ RProblem $
@@ -924,7 +924,7 @@ finalizeReplArtifacts env@(Env _ root projectType _ _ _ _) source modul@(Src.Mod
 
     compileInput ifaces =
       case Compile.compile pkg ifaces modul of
-        Right (Compile.Artifacts canonical annotations objects) ->
+        Right (Compile.Artifacts canonical _ annotations objects) ->
           let
             h = Can._name canonical
             m = Fresh (Src.getName modul) (I.fromModule pkg canonical annotations) objects
@@ -1174,7 +1174,7 @@ compileOutside (Env key _ projectType _ _ _ _) (Details.Local path time _ _ _ _)
     name = Src.getName modul
   in
   case Compile.compile pkg ifaces modul of
-    Right (Compile.Artifacts canonical annotations objects) ->
+    Right (Compile.Artifacts canonical _ annotations objects) ->
       do  Reporting.report key Reporting.BDone
           return $ ROutsideOk name (I.fromModule pkg canonical annotations) objects
 

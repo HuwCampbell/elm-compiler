@@ -684,7 +684,7 @@ delayedUsage (Result.Result k) =
 -- FIND VARIABLE
 
 
-findVar :: A.Region -> Env.Env -> Name.Name -> Result FreeLocals w Can.Expr_
+findVar :: A.Region -> Env.Env -> Name.Name -> Result FreeLocals w (Can.Expr_ A.Region)
 findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
   case Map.lookup name vs of
     Just var ->
@@ -709,7 +709,7 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
       Result.throw (Error.NotFoundVar region Nothing name (toPossibleNames vs qvs))
 
 
-findVarQual :: A.Region -> Env.Env -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
+findVarQual :: A.Region -> Env.Env -> Name.Name -> Name.Name -> Result FreeLocals w (Can.Expr_ A.Region)
 findVarQual region (Env.Env localHome vs _ _ _ qvs _ _) prefix name =
   case Map.lookup prefix qvs of
     Just qualified ->
@@ -743,7 +743,7 @@ toPossibleNames exposed qualified =
 -- FIND CTOR
 
 
-toVarCtor :: Name.Name -> Env.Ctor -> Can.Expr_
+toVarCtor :: Name.Name -> Env.Ctor -> (Can.Expr_ A.Region)
 toVarCtor name ctor =
   case ctor of
     Env.Ctor home typeName (Can.Union vars _ _ opts) index args ->
